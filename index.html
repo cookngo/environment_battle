@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Food Chain Durak</title>
+<script>
+// Load PeerJS dynamically with fallback CDNs
+(function(){
+  const urls = [
+    'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js',
+    'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js'
+  ];
+  let i=0;
+  function load(){
+    if(i>=urls.length){document.getElementById('lMsg').textContent='Failed to load PeerJS. Check your internet connection.';return;}
+    const s=document.createElement('script');
+    s.src=urls[i++];
+    s.onerror=load;
+    document.head.appendChild(s);
+  }
+  load();
+})();
+</script>
+<style>
+  body { font-family: monospace; max-width: 1200px; margin: 16px auto; padding: 8px; }
+
+  /* ── Real card ── */
+  .card {
+    display: inline-block;
+    width: calc((min(100vw, 1200px) - 52px) / 6); aspect-ratio: 5 / 7; height: auto;
+    border: 2px solid #888;
+    border-radius: 8px;
+    background: #fff;
+    margin: 3px;
+    cursor: default;
+    user-select: none;
+    vertical-align: top;
+    box-shadow: 1px 2px 5px rgba(0,0,0,.3);
+    position: relative;
+    font-family: monospace;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+  .card.clickable { cursor: pointer; }
+  .card.clickable:hover { box-shadow: 0 0 0 2px #555, 2px 4px 10px rgba(0,0,0,.4); }
+  .card.trump { border: 3px solid goldenrod; box-shadow: 0 0 6px 1px goldenrod; }
+  .card.sel   { box-shadow: 0 0 0 3px navy; transform: translateY(-10px); }
+
+  /* full-bleed image */
+  .card img.c-img {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  /* corner label — semi-transparent pill so it's readable over any photo */
+  .card .c-corner {
+    position: absolute;
+    font-size: 15px; font-weight: bold; line-height: 1.2;
+    text-align: center;
+    background: rgba(255,255,255,0.82);
+    border-radius: 4px;
+    padding: 1px 3px;
+    z-index: 2;
+  }
+  .card .c-corner.tl { top: 3px; left: 3px; }
+  .card .c-corner.br { bottom: 3px; right: 3px; transform: rotate(180deg); }
+  .card.red .c-corner { color: #c00; }
+
+  .card.empty-slot {
+    background: #f0f0f0; border: 2px dashed #aaa; box-shadow: none;
+    display: inline-flex; justify-content: center; align-items: center;
+    font-size: 11px; color: #aaa;
+  }
+
+  /* table pairs */
+  .table-pair { display: inline-block; vertical-align: top;
+    margin-right: 10px; text-align: center; }
+  .table-pair .arrow { font-size: 18px; display: block; margin: 2px 0; }
+
+  #gHand  { min-height: calc(min(100vw, 1200px) / 6 * 1.4 + 12px); padding: 4px 0; }
+  #gTable { min-height: calc(min(100vw, 1200px) / 6 * 1.4 + 12px); padding: 4px 0; }
+
+
+
+  /* ── Mobile block ── */
+  #mobileBlock {
+    display: none;
+    position: fixed; inset: 0;
+    background: #fff;
+    z-index: 9999;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 24px;
+    font-family: monospace;
+    font-size: 16px;
+  }
+  @media (max-width: 800px) {
+    #mobileBlock { display: flex; }
+  }
+</style>
+</head>
+<body>
+<div id="mobileBlock">⚠️ This game requires a desktop browser.<br><br>Screen too small — please open on a computer with a width of at least 800px.</div>
+
+<!-- ══════════════ LOBBY ══════════════ -->
+<div id="lobby">
+  <h3>Food Chain Durak — Ecosystem Edition</h3>
+  <table border="1" cellpadding="4" style="border-collapse:collapse;font-size:12px;margin-bottom:8px">
+    <tr>
+      <th>Suit</th><th>Biome</th>
+      <th>A / 2 / 3 / 4</th><th>5 / 6 / 7</th><th>8 / 9 / 10</th><th>J / Q / K</th>
+    </tr>
+    <tr><td>♠</td><td>Ocean</td>   <td>Producer</td><td>Primary Consumer</td><td>Secondary Consumer</td><td>Tertiary Consumer</td></tr>
+    <tr><td>♥</td><td>Sahara</td>    <td>Producer</td><td>Primary Consumer</td><td>Secondary Consumer</td><td>Tertiary Consumer</td></tr>
+    <tr><td>♦</td><td>Rainforest</td>  <td>Producer</td><td>Primary Consumer</td><td>Secondary Consumer</td><td>Tertiary Consumer</td></tr>
+    <tr><td>♣</td><td>Arctic</td>   <td>Producer</td><td>Primary Consumer</td><td>Secondary Consumer</td><td>Tertiary Consumer</td></tr>
+  </table>
+  <small>
+    Rules: Trump biome beats all other biomes. Higher rank beats lower rank within the same biome.<br>
+    Trump card (face-up at deck bottom) determines the dominant biome for the round.
+  </small>
+  <br><br>
+  <input id="iName" placeholder="Your name" maxlength="16">
+  <input id="iRoom" placeholder="Room code (e.g. XYZ9)" maxlength="8"
+         oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')">
+  <button onclick="connect()">Join / Create Room</button>
+  <div id="lMsg" style="margin-top:6px"></div>
+  <div id="lPlayers" style="margin-top:4px"></div>
+  <button id="btnStart" style="display:none;margin-top:8px" onclick="hostStart()">▶ Start Game</button>
+</div>
+
+<!-- ══════════════ GAME ══════════════ -->
+<div id="gameDiv" style="display:none">
+  <div id="gBar"></div><hr>
+  <b>Table:</b>
+  <div id="gTable" style="margin:4px 0;min-height:26px"></div><hr>
+  <b>Your hand</b> <small>(click a card to select it, then use an action button)</small>:
+  <div id="gHand" style="margin:4px 0;min-height:26px"></div>
+  <div id="gAct" style="margin-top:6px"></div><hr>
+  <div id="gOthers"></div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  CARD SYSTEM
+// ═══════════════════════════════════════════════════════════
+const SUITS  = ['♠','♥','♦','♣'];
+const BIOME  = {'♠':'Ocean','♥':'Sahara','♦':'Rainforest','♣':'Arctic'};
+const RANKS  = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+const RV     = {'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,'J':11,'Q':12,'K':13,'A':14};
+
+function trophic(r){
+  const v=RV[r];
+  if(v<=5) return 'Producer';
+  if(v<=8) return 'Primary Consumer';
+  if(v<=11)return 'Secondary Consumer';
+  return 'Tertiary Consumer';
+}
+
+// Animal name + emoji per [suit][rank]
+const ANIMALS = {
+  '♠':{ // Ocean
+    '2':{e:'🌿',n:'Phytoplankton'}, '3':{e:'🪸',n:'Kelp'},     '4':{e:'🪸',n:'Coral'},
+    '5':{e:'🦐',n:'Krill'},         '6':{e:'🐟',n:'Sardine'},   '7':{e:'🦑',n:'Squid'},
+    '8':{e:'🐠',n:'Tuna'},          '9':{e:'🦭',n:'Seal'},      '10':{e:'🐬',n:'Dolphin'},
+    'J':{e:'🦈',n:'Shark'},         'Q':{e:'🐋',n:'Orca'},      'K':{e:'🐡',n:'Marlin'},
+    'A':{e:'🐙',n:'Kraken'}
+  },
+  '♥':{ // Sahara
+    '2':{e:'🌵',n:'Cactus'},        '3':{e:'🌿',n:'Shrub'},     '4':{e:'🌴',n:'Date Palm'},
+    '5':{e:'🦗',n:'Locust'},        '6':{e:'🐭',n:'Jerboa'},    '7':{e:'🦎',n:'Monitor'},
+    '8':{e:'🦂',n:'Scorpion'},      '9':{e:'🐍',n:'Horned Viper'},'10':{e:'🦅',n:'Desert Eagle'},
+    'J':{e:'🐆',n:'Cheetah'},       'Q':{e:'🦁',n:'Lion'},      'K':{e:'🐊',n:'Nile Croc'},
+    'A':{e:'🦅',n:'Lappet Vulture'}
+  },
+  '♦':{ // Rainforest
+    '2':{e:'🌿',n:'Moss'},          '3':{e:'🌱',n:'Fern'},      '4':{e:'🌳',n:'Fig Tree'},
+    '5':{e:'🐛',n:'Caterpillar'},   '6':{e:'🦋',n:'Morpho'},    '7':{e:'🐒',n:'Tamarin'},
+    '8':{e:'🐸',n:'Poison Frog'},   '9':{e:'🐍',n:'Anaconda'},  '10':{e:'🦜',n:'Harpy Eagle'},
+    'J':{e:'🐆',n:'Jaguar'},        'Q':{e:'🐊',n:'Caiman'},    'K':{e:'🦍',n:'Gorilla'},
+    'A':{e:'🐅',n:'Bengal Tiger'}
+  },
+  '♣':{ // Arctic
+    '2':{e:'🌿',n:'Lichen'},        '3':{e:'🌱',n:'Sedge'},     '4':{e:'🌿',n:'Arctic Willow'},
+    '5':{e:'🐭',n:'Lemming'},       '6':{e:'🐦',n:'Ptarmigan'}, '7':{e:'🫎',n:'Caribou'},
+    '8':{e:'🦊',n:'Arctic Fox'},    '9':{e:'🦡',n:'Wolverine'}, '10':{e:'🦉',n:'Snowy Owl'},
+    'J':{e:'🐺',n:'Wolf'},          'Q':{e:'🐻‍❄️',n:'Polar Bear'},'K':{e:'🦭',n:'Walrus'},
+    'A':{e:'🐋',n:'Orca'}
+  }
+};
+
+const isRed   = s => s==='♥'||s==='♦';
+const cs      = c => c.rank+c.suit;   // e.g. "K♠"
+const beats   = (atk,def,trump) =>
+  def.suit===atk.suit ? RV[def.rank]>RV[atk.rank] : def.suit===trump;
+
+function makeDeck(){
+  return SUITS.flatMap(s => RANKS.map(r => ({suit:s, rank:r})));
+}
+function shuffle(a){
+  for(let i=a.length-1;i>0;i--){
+    const j=0|Math.random()*(i+1);[a[i],a[j]]=[a[j],a[i]];
+  }
+  return a;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  NETWORK STATE
+// ═══════════════════════════════════════════════════════════
+let peer, hostConn, clients={};   // clients: peerId → conn  (host only)
+let myId, myName, isHost=false;
+let gs=null;    // full game state; host is authoritative
+let selIdx=-1;  // index of selected card in MY hand
+
+const PC_CFG = { host:'0.peerjs.com', port:443, secure:true, path:'/' };
+
+// ─── CONNECT ────────────────────────────────────────────────
+function connect(){
+  myName=(document.getElementById('iName').value.trim()||'Player').slice(0,16);
+  const code=document.getElementById('iRoom').value.trim();
+  if(!code){ alert('Enter a room code'); return; }
+
+  lmsg('Connecting…');
+  const hid='fcd-'+code;
+
+  // Try to claim the host peer-ID. If taken → become a client.
+  peer = new Peer(hid, PC_CFG);
+
+  peer.on('open', id=>{
+    myId=id; isHost=true;
+    lmsg('Room ready — share code: <b>'+code+'</b> &nbsp;(you are host)');
+    gs = {
+      phase:'lobby',
+      players:[{id:myId, name:myName, hand:[]}],
+      deck:[], trump:null, deckBot:null,
+      table:[], atkIdx:0, defIdx:1,
+      sub:'attack', log:[], durak:null
+    };
+    peer.on('connection', conn=>{
+      conn.on('open',()=>{});
+      conn.on('data',  m => onMsg(conn,m));
+      conn.on('close', ()=>{
+        if(conn._pid){
+          const p=gs.players.find(p=>p.id===conn._pid);
+          if(p){ p.dc=true; log(p.name+' disconnected'); bcast(); }
+        }
+      });
+    });
+    rlob();
+  });
+
+  peer.on('error', err=>{
+    if(err.type==='unavailable-id'){
+      // Someone already has the host ID → join as client
+      lmsg('Room exists — joining as client…');
+      peer = new Peer(null, PC_CFG);
+      peer.on('open', id=>{ myId=id; joinAs(hid); });
+      peer.on('error', e=>lmsg('Error: '+e.type));
+    } else {
+      lmsg('PeerJS error: '+err.type+
+           '. Try a different room code or check network.');
+    }
+  });
+}
+
+function joinAs(hid){
+  hostConn = peer.connect(hid,{reliable:true});
+  hostConn.on('open', ()=>{
+    hostConn.send({type:'join', id:myId, name:myName});
+    lmsg('Joined room as '+myName+'. Waiting for host to start…');
+  });
+  hostConn.on('data', m=>{
+    if(m.type==='state'){ gs=m.gs; gs.phase==='lobby'?rlob():rgame(); }
+    if(m.type==='err')  { alert('Server: '+m.msg); }
+  });
+  hostConn.on('error', ()=>lmsg('Connection error — check room code'));
+  hostConn.on('close', ()=>lmsg('Host disconnected'));
+}
+
+// ─── HOST MESSAGE HANDLER ────────────────────────────────────
+function onMsg(conn,m){
+  if(m.type==='join'){
+    conn._pid=m.id; clients[m.id]=conn;
+    if(!gs.players.find(p=>p.id===m.id)){
+      gs.players.push({id:m.id,name:m.name,hand:[]});
+      log(m.name+' joined');
+    }
+    bcast(); rlob();
+  } else if(m.type==='action'){
+    gameAction(conn._pid, m.act);
+  }
+}
+
+// ─── BROADCAST / SEND ────────────────────────────────────────
+function bcast(){
+  for(const id in clients){
+    try{ clients[id].send({type:'state', gs}); }catch(e){}
+  }
+  gs.phase==='lobby' ? rlob() : rgame();
+}
+
+// Send an action.  Host processes directly; clients relay to host.
+function send(act){
+  if(isHost) gameAction(myId,act);
+  else        hostConn.send({type:'action', act});
+}
+
+// ═══════════════════════════════════════════════════════════
+//  GAME LOGIC  (runs on host only)
+// ═══════════════════════════════════════════════════════════
+
+// ─── START ───────────────────────────────────────────────────
+function hostStart(){
+  if(!isHost){ return; }
+  if(gs.players.length<2){ alert('Need at least 2 players'); return; }
+
+  const deck=shuffle(makeDeck());
+  Object.assign(gs,{
+    phase:'playing', sub:'attack', durak:null,
+    deck, deckBot:{...deck[0]}, trump:deck[0].suit, table:[]
+  });
+  gs.log=['=== GAME START ==='];
+
+  for(const p of gs.players) p.hand=[];
+  for(let i=0;i<6;i++)
+    for(const p of gs.players)
+      if(gs.deck.length) p.hand.push(gs.deck.pop());
+
+  // Player with lowest trump card attacks first
+  let lo=99, li=0;
+  gs.players.forEach((p,i)=>p.hand.forEach(c=>{
+    if(c.suit===gs.trump && RV[c.rank]<lo){ lo=RV[c.rank]; li=i; }
+  }));
+  gs.atkIdx=li; gs.defIdx=nextAlive(li);
+
+  log('Trump biome: '+BIOME[gs.trump]+' ('+gs.trump+')');
+  log(gs.players[gs.atkIdx].name+' attacks first');
+  bcast();
+}
+
+// ─── NEXT ACTIVE PLAYER ──────────────────────────────────────
+// Skips players who have finished (hand empty AND deck empty).
+function nextAlive(from){
+  for(let i=1;i<gs.players.length;i++){
+    const idx=(from+i)%gs.players.length;
+    if(gs.deck.length>0 || gs.players[idx].hand.length>0) return idx;
+  }
+  return (from+1)%gs.players.length;
+}
+
+// ─── ACTION PROCESSOR ────────────────────────────────────────
+function gameAction(pid, act){
+  if(gs.phase!=='playing') return;
+
+  const pi  = gs.players.findIndex(p=>p.id===pid);
+  if(pi===-1) return;
+  const pl  = gs.players[pi];
+  const atk = gs.players[gs.atkIdx];
+  const def = gs.players[gs.defIdx];
+
+  // ── ATTACK / ADD CARD ──────────────────────────────────────
+  if(act.type==='atk'){
+    const canAtk = (gs.sub==='attack' && pid===atk.id) ||
+                   (gs.sub==='adding' && pid!==def.id);
+    if(!canAtk || pid===def.id) return;
+
+    const c=act.card;
+
+    // If table already has cards, new card's rank must match an existing rank
+    if(gs.table.length>0){
+      const ranks=new Set(gs.table.flatMap(t=>[t.a.rank, t.d?.rank].filter(Boolean)));
+      if(!ranks.has(c.rank)) return;
+    }
+
+    // Can't pile on more attack cards than defender can beat
+    const openSlots = def.hand.length - gs.table.filter(t=>!t.d).length;
+    if(openSlots<=0) return;
+
+    if(rmHand(pl.hand,c)===-1) return;   // card not in hand
+    gs.table.push({a:c, d:null});
+    gs.sub='defend';
+    log(pl.name+' attacks: '+cs(c)+' ['+trophic(c.rank)+' / '+BIOME[c.suit]+']');
+
+  // ── DEFEND ────────────────────────────────────────────────
+  } else if(act.type==='def'){
+    if(gs.sub!=='defend' || pid!==def.id) return;
+    const {si, card:c}=act;
+    if(!gs.table[si] || gs.table[si].d) return;
+    if(!beats(gs.table[si].a, c, gs.trump)) return;
+    if(rmHand(def.hand,c)===-1) return;
+    gs.table[si].d=c;
+    log(def.name+' defends: '+cs(c)+' ['+trophic(c.rank)+']');
+    if(gs.table.every(t=>t.d)) gs.sub='adding';
+
+  // ── TAKE ──────────────────────────────────────────────────
+  } else if(act.type==='take'){
+    if(pid!==def.id) return;
+    let n=0;
+    gs.table.forEach(t=>{ def.hand.push(t.a); if(t.d)def.hand.push(t.d); n++; });
+    log(def.name+' takes '+gs.table.reduce((s,t)=>s+1+(t.d?1:0),0)+' cards');
+    gs.table=[];
+    drawCards();
+    // Attacker after a take = player after the defender (defender is penalised, sits out)
+    gs.atkIdx = nextAlive(gs.defIdx);
+    gs.defIdx = nextAlive(gs.atkIdx);
+    gs.sub='attack';
+    chkEnd();
+
+  // ── DONE ADDING ───────────────────────────────────────────
+  } else if(act.type==='done'){
+    if(pid!==atk.id || gs.sub!=='adding') return;
+    // Safety: if any slots undefended, force defend phase
+    if(gs.table.some(t=>!t.d)){ gs.sub='defend'; bcast(); return; }
+    log(def.name+' successfully defended!');
+    gs.table=[];
+    drawCards();
+    // Successful defence: defender becomes next attacker
+    gs.atkIdx = gs.defIdx;
+    gs.defIdx = nextAlive(gs.atkIdx);
+    gs.sub='attack';
+    chkEnd();
+  }
+
+  bcast();
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────
+function rmHand(hand,c){
+  const i=hand.findIndex(x=>x.suit===c.suit&&x.rank===c.rank);
+  if(i!==-1) hand.splice(i,1);
+  return i;
+}
+
+function drawCards(){
+  // Draw order: attacker (clockwise, skipping defender), defender last
+  const ord=[];
+  let i=gs.atkIdx;
+  for(let n=0;n<gs.players.length;n++){
+    if(i!==gs.defIdx) ord.push(i);
+    i=(i+1)%gs.players.length;
+  }
+  ord.push(gs.defIdx);
+  for(const idx of ord)
+    while(gs.players[idx].hand.length<6 && gs.deck.length)
+      gs.players[idx].hand.push(gs.deck.pop());
+}
+
+function chkEnd(){
+  if(gs.deck.length>0) return;
+  const alive=gs.players.filter(p=>p.hand.length>0);
+  if(alive.length<=1){
+    gs.phase='gameover';
+    gs.durak=alive[0]?.id||null;
+    log('=== GAME OVER === '+(alive[0]?alive[0].name+' is the DURAK (loser)!':'All players finished — draw!'));
+  }
+}
+
+function log(m){ gs.log.push(m); if(gs.log.length>60) gs.log.shift(); console.log("[FoodChainDurak]", m); }
+
+// ═══════════════════════════════════════════════════════════
+//  RENDERING
+// ═══════════════════════════════════════════════════════════
+function lmsg(m){ document.getElementById('lMsg').innerHTML=m; }
+
+function rlob(){
+  if(!gs) return;
+  document.getElementById('lPlayers').textContent=
+    'Players ('+gs.players.length+'): '+gs.players.map(p=>p.name).join(', ');
+  document.getElementById('btnStart').style.display=isHost?'inline':'none';
+}
+
+// ─── CARD RENDERING ──────────────────────────────────────────
+// Asset filename convention: assets/{rank}{suitLetter}.png
+// Suit letters: ♠=S  ♥=H  ♦=D  ♣=C   e.g. assets/2H.png  assets/KS.png
+const SUIT_LETTER = {'♠':'S','♥':'H','♦':'D','♣':'C'};
+function cardImgSrc(c){ const r=c.rank==='10'?'0':c.rank; return `assets/${r}${SUIT_LETTER[c.suit]}.png`; }
+
+function cardDiv(c, idx, clickable){
+  if(!c) return emptySlotCard();
+  const animal  = ANIMALS[c.suit]?.[c.rank] || {e:'?', n:'?'};
+  const isT     = c.suit === gs.trump;
+  const red     = isRed(c.suit) ? ' red' : '';
+  const trump   = isT           ? ' trump' : '';
+  const sel     = (clickable && idx===selIdx) ? ' sel' : '';
+  const click   = clickable     ? ' clickable' : '';
+  const onclick = clickable     ? ` onclick="selCard(${idx})"` : '';
+  const tt      = `${animal.n} — ${trophic(c.rank)} of the ${BIOME[c.suit]}${isT?' (TRUMP)':''}`;
+  const corner  = `${c.rank}<br>${c.suit}`;
+  const src     = cardImgSrc(c);
+  // Falls back to emoji+name if image not yet added
+  return `<div class="card${red}${trump}${sel}${click}"${onclick} title="${tt}">
+  <img class="c-img" src="${src}" alt="${tt}"
+       onerror="this.style.display='none';this.nextSibling.style.display='flex'">
+  <div style="display:none;position:absolute;inset:0;flex-direction:column;
+       justify-content:center;align-items:center;font-size:22px;gap:2px;background:#fff;">
+    <span>${animal.e}</span><span style="font-size:8px;color:#444">${animal.n}</span>
+  </div>
+  <div class="c-corner tl">${corner}</div>
+  <div class="c-corner br">${corner}</div>
+</div>`;
+}
+
+function emptySlotCard(){
+  return `<div class="card empty-slot">?</div>`;
+}
+
+function rgame(){
+  document.getElementById('lobby').style.display='none';
+  document.getElementById('gameDiv').style.display='block';
+  if(!gs) return;
+
+  const me  = gs.players.find(p=>p.id===myId);
+  if(!me) return;
+  const atk = gs.players[gs.atkIdx];
+  const def = gs.players[gs.defIdx];
+  const amAtk = atk?.id===myId;
+  const amDef = def?.id===myId;
+
+  // ── Info bar ─────────────────────────────────────────────
+  const phase = gs.phase==='gameover' ? 'GAME OVER' : gs.sub;
+  const trumpCard = gs.deckBot ? cardDiv(gs.deckBot,-1,false) : '';
+  document.getElementById('gBar').innerHTML =
+    `<b>Deck:</b> ${gs.deck.length} cards &nbsp;|&nbsp; `+
+    `<b>Trump biome:</b> ${gs.trump} ${BIOME[gs.trump]||''} &nbsp;`+
+    (trumpCard ? `(indicator: ${trumpCard})` : '')+
+    `<br><b>Phase:</b> ${phase} &nbsp;|&nbsp; `+
+    `<b>Attacker:</b> ${atk?.name||'?'} &nbsp;|&nbsp; `+
+    `<b>Defender:</b> ${def?.name||'?'}`;
+
+  // ── Table ─────────────────────────────────────────────────
+  if(gs.table.length===0){
+    document.getElementById('gTable').textContent='(empty)';
+  } else {
+    document.getElementById('gTable').innerHTML =
+      gs.table.map((t,i)=>{
+        const atkCard = cardDiv(t.a,-1,false);
+        const defCard = t.d ? cardDiv(t.d,-1,false) : emptySlotCard();
+        return `<div class="table-pair">${atkCard}<span class="arrow">↓</span>${defCard}</div>`;
+      }).join('');
+  }
+
+  // ── Hand ──────────────────────────────────────────────────
+  document.getElementById('gHand').innerHTML =
+    me.hand.length===0
+      ? '<em>(no cards — you have escaped the food chain!)</em>'
+      : me.hand.map((c,i)=>cardDiv(c,i,true)).join('');
+
+  // ── Actions ───────────────────────────────────────────────
+  let html='';
+  if(gs.phase==='gameover'){
+    const dk=gs.players.find(p=>p.id===gs.durak);
+    html=`<b>GAME OVER — DURAK (loser): ${dk?dk.name:'Draw'}</b>`;
+  } else if(gs.sub==='attack' && amAtk){
+    html='<button onclick="doAtk()">Attack with selected card</button>';
+  } else if(gs.sub==='defend' && amDef){
+    const slot=gs.table.findIndex(t=>!t.d);
+    if(slot!==-1)
+      html=`<button onclick="doDef(${slot})">Defend slot ${slot+1} with selected card</button> `+
+           `<button onclick="send({type:'take'})">Take all cards (give up round)</button>`;
+    else
+      html='<em>All cards defended — waiting for attacker…</em>';
+  } else if(gs.sub==='adding'){
+    if(!amDef){
+      html+=`<button onclick="doAtk()">Add card (rank must match table)</button> `;
+    }
+    if(amAtk){
+      html+=`<button onclick="send({type:'done'})">Done Adding (end attack round)</button>`;
+    } else if(!amDef){
+      html+='<em> — wait for attacker to finish adding</em>';
+    } else {
+      html='<em>Waiting for attackers to finish…</em>';
+    }
+  } else {
+    html=`<em>Waiting for ${atk?.name||'?'} to attack…</em>`;
+  }
+  document.getElementById('gAct').innerHTML=html;
+
+  // ── Others' hand sizes ────────────────────────────────────
+  document.getElementById('gOthers').innerHTML =
+    'Other players: '+
+    gs.players.filter(p=>p.id!==myId)
+      .map(p=>`${p.name}: ${p.hand.length} card(s)${p.dc?' [disconnected]':''}`)
+      .join(' | ');
+
+  // Log is in browser console (F12)
+}
+
+// ─── CARD SELECTION & ACTIONS ────────────────────────────────
+function selCard(i){ selIdx=(selIdx===i)?-1:i; rgame(); }
+function myPlayer(){ return gs.players.find(p=>p.id===myId); }
+
+function doAtk(){
+  const m=myPlayer();
+  if(!m||selIdx<0||!m.hand[selIdx]){ alert('Select a card first'); return; }
+  send({type:'atk', card:m.hand[selIdx]});
+  selIdx=-1;
+}
+
+function doDef(si){
+  const m=myPlayer();
+  if(!m||selIdx<0||!m.hand[selIdx]){ alert('Select a card first'); return; }
+  send({type:'def', si, card:m.hand[selIdx]});
+  selIdx=-1;
+}
+</script>
+
+<small>
+  <b>How to play:</b>
+  All players open this page, enter the same room code, and hit Join/Create.<br>
+  The first player to enter the code becomes the host and sees the Start button.<br>
+  <b>Goal:</b> Get rid of all your cards. Last player holding cards = the DURAK (loser).<br>
+  <b>Attack:</b> Select a card, click Attack. &nbsp;
+  <b>Defend:</b> Select a card that beats the attack, click Defend. &nbsp;
+  <b>Can't defend?</b> Click Take.<br>
+  Hover over any card to see its trophic role and biome. Trump (bold border) beats everything else.
+</small>
+</body>
+</html>
