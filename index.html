@@ -524,7 +524,7 @@ function rgame(){
 
   // ── Info bar ─────────────────────────────────────────────
   const phase = gs.phase==='gameover' ? 'GAME OVER' : gs.sub;
-  const trumpCard = gs.deckBot ? cardDiv(gs.deckBot,-1,false) : '';
+  const trumpCard = gs.deckBot ? cardDiv(gs.deckBot,-1,false).replace('<div class="card', '<div style="width:100px;margin-bottom:15px" class="card') : '';
   document.getElementById('gBar').innerHTML =
     `<b>Deck:</b> ${gs.deck.length} cards &nbsp;|&nbsp; `+
     `<b>Trump biome:</b> ${gs.trump} ${BIOME[gs.trump]||''} &nbsp;`+
